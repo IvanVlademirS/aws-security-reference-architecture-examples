@@ -13,9 +13,10 @@ import copy
 import logging
 import os
 import re
-from typing import TYPE_CHECKING, Any, List, Union
+from typing import TYPE_CHECKING, Any, List, Optional
 
 import boto3
+from botocore.config import Config
 from crhelper import CfnResource
 
 if TYPE_CHECKING:
@@ -28,8 +29,9 @@ if TYPE_CHECKING:
 
 # Setup Default Logger
 LOGGER = logging.getLogger(__name__)
-log_level = os.environ.get("LOG_LEVEL", logging.ERROR)
+log_level: str = os.environ.get("LOG_LEVEL", "ERROR")
 LOGGER.setLevel(log_level)
+BOTO3_CONFIG = Config(retries={"max_attempts": 10, "mode": "standard"})
 
 # Initialize the helper
 helper = CfnResource(json_logging=True, log_level=log_level, boto_level="CRITICAL", sleep_on_delete=120)
@@ -49,7 +51,7 @@ def assume_role(role: str, role_session_name: str, account: str = None, session:
     """
     if not session:
         session = boto3.Session()
-    sts_client: STSClient = session.client("sts")
+    sts_client: STSClient = session.client("sts", config=BOTO3_CONFIG)
     sts_arn = sts_client.get_caller_identity()["Arn"]
     LOGGER.info(f"USER: {sts_arn}")
     if not account:
@@ -117,7 +119,7 @@ def update_aggregator(config_client: ConfigServiceClient, aggregator: str, aggre
     LOGGER.info(api_call_details)
 
 
-def parameter_pattern_validator(parameter_name: str, parameter_value: Union[str, None], pattern: str) -> None:
+def parameter_pattern_validator(parameter_name: str, parameter_value: Optional[str], pattern: str) -> None:
     """Validate CloudFormation Custom Resource Parameters.
 
     Args:
@@ -175,7 +177,7 @@ def process_event(event: CloudFormationCustomResourceEvent, context: Context) ->
 
     management_account: str = context.invoked_function_arn.split(":")[4]
     audit_account_session = assume_role(params["ROLE_TO_ASSUME"], params["ROLE_SESSION_NAME"], params["AUDIT_ACCOUNT_ID"])
-    config_client: ConfigServiceClient = audit_account_session.client("config")
+    config_client: ConfigServiceClient = audit_account_session.client("config", config=BOTO3_CONFIG)
 
     existing_aggregation_sources = get_existing_account_aggregation_sources(config_client, params["AGGREGATOR_NAME"])
     updated_aggregation_sources = get_updated_account_aggregation_sources(existing_aggregation_sources, management_account, params["action"])
@@ -198,9 +200,8 @@ def lambda_handler(event: CloudFormationCustomResourceEvent, context: Context) -
         ValueError: Unexpected error executing Lambda function
 
     """
-    LOGGER.info("....Lambda Handler Started....")
     try:
         helper(event, context)
-    except Exception as error:
-        LOGGER.error(f"Unexpected Error: {error}")
+    except Exception:
+        LOGGER.exception("Unexpected!")
         raise ValueError(f"Unexpected error executing Lambda function. Review CloudWatch logs '{context.log_group_name}' for details.") from None

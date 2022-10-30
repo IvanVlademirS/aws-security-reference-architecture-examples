@@ -1,5 +1,6 @@
 # type: ignore
 """Custom Resource to get AWS Organization ID.
+
 Version: 1.0
 
 'common_prerequisites' solution in the repo, https://github.com/aws-samples/aws-security-reference-architecture-examples
@@ -14,7 +15,7 @@ import boto3
 import cfnresponse
 
 LOGGER = logging.getLogger(__name__)
-log_level = os.environ.get("LOG_LEVEL", logging.ERROR)
+log_level: str = os.environ.get("LOG_LEVEL", "ERROR")
 LOGGER.setLevel(log_level)
 
 
@@ -41,7 +42,7 @@ def lambda_handler(event, context):
     try:
         data = get_org_id()
         cfnresponse.send(event, context, cfnresponse.SUCCESS, data, data["OrganizationId"])
-    except Exception as error:
-        LOGGER.error({"Unexpected Error": error})
+    except Exception:
+        LOGGER.exception("Unexpected!")
         reason = f"See the details in CloudWatch Log Stream: '{context.log_group_name}'"
         cfnresponse.send(event, context, cfnresponse.FAILED, {}, data["OrganizationId"], reason=reason)

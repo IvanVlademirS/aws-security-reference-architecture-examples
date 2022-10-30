@@ -1,0 +1,38 @@
+[
+    {
+        "ParameterKey": "pCreateLambdaLogGroup",
+        "ParameterValue": "false"
+    },
+    {
+        "ParameterKey": "pCreateVpcForSG",
+        "ParameterValue": "true"
+    },
+    {
+        "ParameterKey": "pEnableRemediation",
+        "ParameterValue": "false"
+    },
+    {
+        "ParameterKey": "pInternalNetCIDR",
+        "ParameterValue": ""
+    },
+    {
+        "ParameterKey": "pLambdaLogGroupKmsKey",
+        "ParameterValue": ""
+    },
+    {
+        "ParameterKey": "pLambdaLogGroupRetention",
+        "ParameterValue": "14"
+    },
+    {
+        "ParameterKey": "pLambdaLogLevel",
+        "ParameterValue": "INFO"
+    },
+    {
+        "ParameterKey": "pVPCCidrBlock",
+        "ParameterValue": "10.0.0.0/28"
+    },
+    {
+        "ParameterKey": "pVpcId",
+        "ParameterValue": ""
+    }
+]

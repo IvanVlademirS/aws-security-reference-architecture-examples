@@ -5,7 +5,7 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description:
   Creates the SRA staging S3 bucket to store solution Lambda source code, CloudFormation templates, and other deployment files. -
-  'common_prerequisites' solution in the repo, https://github.com/aws-samples/aws-security-reference-architecture-examples
+  'common_prerequisites' solution in the repo, https://github.com/aws-samples/aws-security-reference-architecture-examples (sra-1ssgnse2h)
 Metadata:
   SRA:
     Version: 1.0
@@ -33,6 +33,8 @@ Metadata:
           - pLambdaLogGroupKmsKey
           - pLambdaLogLevel
     ParameterLabels:
+      pAWSControlTowerExecutionRoleName:
+        default: Control Tower Execution Role Name
       pCreateLambdaLogGroup:
         default: Create Lambda Log Group
       pLambdaLogGroupKmsKey:
@@ -70,6 +72,7 @@ Parameters:
   pLambdaLogGroupKmsKey:
     AllowedPattern: '^$|^arn:(aws[a-zA-Z-]*){1}:kms:[a-z0-9-]+:\d{12}:key\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$'
     ConstraintDescription: 'Key ARN example:  arn:aws:kms:us-east-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab'
+    Default: ''
     Description:
       (Optional) KMS Key ARN to use for encrypting the Lambda logs data. If empty, encryption is enabled with CloudWatch Logs managing the server-side
       encryption keys.
@@ -99,6 +102,7 @@ Parameters:
   pOrganizationId:
     AllowedPattern: '^$|^o-[a-z0-9]{10,32}$'
     ConstraintDescription: Must start with 'o-' followed by from 10 to 32 lowercase letters or digits. (e.g. o-abc1234567)
+    Default: ''
     Description: (Optional) AWS Organizations ID. If empty, custom resource will be deployed to determine the AWS Organization ID.
     Type: String
   pSRASolutionName:
@@ -126,6 +130,17 @@ Conditions:
     - !Condition cCreateCustomResource
     - !Condition cCreateLambdaLogGroup
   cUsingKmsKey: !Not [!Equals [!Ref pLambdaLogGroupKmsKey, '']]
+  cUseGraviton: !Or
+    - !Equals [!Ref 'AWS::Region', ap-northeast-1]
+    - !Equals [!Ref 'AWS::Region', ap-south-1]
+    - !Equals [!Ref 'AWS::Region', ap-southeast-1]
+    - !Equals [!Ref 'AWS::Region', ap-southeast-2]
+    - !Equals [!Ref 'AWS::Region', eu-central-1]
+    - !Equals [!Ref 'AWS::Region', eu-west-1]
+    - !Equals [!Ref 'AWS::Region', eu-west-2]
+    - !Equals [!Ref 'AWS::Region', us-east-1]
+    - !Equals [!Ref 'AWS::Region', us-east-2]
+    - !Equals [!Ref 'AWS::Region', us-west-2]
 
 Resources:
   rOrgIdLambdaCustomResource:
@@ -147,13 +162,23 @@ Resources:
           - id: W92
             reason: Lambda does not need reserved concurrent executions.
       checkov:
-        - checkov:skip=CKV_AWS_116:DLQ not needed, as Lambda function only triggered by CloudFormation events.
-        - checkov:skip=CKV_AWS_173:Environment variables are not sensitive
+        skip:
+          - id: CKV_AWS_115
+            comment: Lambda does not need reserved concurrent executions.
+          - id: CKV_AWS_116
+            comment: DLQ not needed, as Lambda function only triggered by CloudFormation events.
+          - id: CKV_AWS_117
+            comment: Lambda does not need to communicate with VPC resources.
+          - id: CKV_AWS_173
+            comment: Environment variables are not sensitive.
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Ref pOrgIdLambdaFunctionName
       Description: Get AWS Organization ID
-      Architectures: [arm64]
+      Architectures: !If
+        - cUseGraviton
+        - [arm64]
+        - !Ref AWS::NoValue
       Handler: index.lambda_handler
       Role: !GetAtt rOrgIdLambdaRole.Arn
       Runtime: python3.9
@@ -179,7 +204,7 @@ Resources:
           import cfnresponse
 
           LOGGER = logging.getLogger(__name__)
-          log_level = os.environ.get("LOG_LEVEL", logging.ERROR)
+          log_level: str = os.environ.get("LOG_LEVEL", "ERROR")
           LOGGER.setLevel(log_level)
 
 
@@ -206,8 +231,8 @@ Resources:
               try:
                   data = get_org_id()
                   cfnresponse.send(event, context, cfnresponse.SUCCESS, data, data["OrganizationId"])
-              except Exception as error:
-                  LOGGER.error({"Unexpected Error": error})
+              except Exception:
+                  LOGGER.exception("Unexpected!")
                   reason = f"See the details in CloudWatch Log Stream: '{context.log_group_name}'"
                   cfnresponse.send(event, context, cfnresponse.FAILED, {}, data["OrganizationId"], reason=reason)
 
@@ -277,7 +302,9 @@ Resources:
           - id: W35
             reason: S3 access logs intentionally not enabled
       checkov:
-        - checkov:skip=CKV_AWS_18:S3 access logs intentionally not enabled
+        skip:
+          - id: CKV_AWS_18
+            comment: S3 access logs intentionally not enabled
     Properties:
       BucketName: !Sub ${pSRAStagingS3BucketNamePrefix}-${AWS::AccountId}-${AWS::Region}
       BucketEncryption:
@@ -317,7 +344,9 @@ Resources:
             Resource: !Sub arn:${AWS::Partition}:s3:::${rSRAStagingS3Bucket}/*
             Condition:
               ArnLike:
-                aws:PrincipalArn: !Sub arn:${AWS::Partition}:iam::*:${pAWSControlTowerExecutionRoleName}
+                aws:PrincipalArn:
+                  - !Sub arn:${AWS::Partition}:iam::*:role/${pAWSControlTowerExecutionRoleName}
+                  - !Sub arn:${AWS::Partition}:iam::*:role/stacksets-exec-*
 
           - Sid: DenyExternalPrincipals
             Effect: Deny

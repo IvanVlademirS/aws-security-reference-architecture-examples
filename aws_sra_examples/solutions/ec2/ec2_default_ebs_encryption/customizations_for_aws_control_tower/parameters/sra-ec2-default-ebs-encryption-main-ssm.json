@@ -1,0 +1,42 @@
+[
+    {
+        "ParameterKey": "pComplianceFrequency",
+        "ParameterValue": "7"
+    },
+    {
+        "ParameterKey": "pControlTowerRegionsOnly",
+        "ParameterValue": "true"
+    },
+    {
+        "ParameterKey": "pCreateLambdaLogGroup",
+        "ParameterValue": "false"
+    },
+    {
+        "ParameterKey": "pEnabledRegions",
+        "ParameterValue": ""
+    },
+    {
+        "ParameterKey": "pExcludeEC2DefaultEBSEncryptionTags",
+        "ParameterValue": ""
+    },
+    {
+        "ParameterKey": "pLambdaLogGroupKmsKey",
+        "ParameterValue": ""
+    },
+    {
+        "ParameterKey": "pLambdaLogGroupRetention",
+        "ParameterValue": "14"
+    },
+    {
+        "ParameterKey": "pLambdaLogLevel",
+        "ParameterValue": "INFO"
+    },
+    {
+        "ParameterKey": "pSRAAlarmEmail",
+        "ParameterValue": ""
+    },
+    {
+        "ParameterKey": "pSRASolutionVersion",
+        "ParameterValue": "v1.2"
+    }
+]

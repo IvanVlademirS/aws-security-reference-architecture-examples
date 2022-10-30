@@ -5,10 +5,10 @@
 AWSTemplateFormatVersion: 2010-09-09
 Description:
   This template creates the pre-requisite resources for staging the SRA solutions. Resolving SSM parameters. - 'common_prerequisites' solution in the
-  repo, https://github.com/aws-samples/aws-security-reference-architecture-examples
+  repo, https://github.com/aws-samples/aws-security-reference-architecture-examples (sra-1ssgnse2h)
 Metadata:
   SRA:
-    Version: 1.0
+    Version: 1.3
     Entry: Parameters for deploying solution resolving SSM parameters
     Order: 1
   AWS::CloudFormation::Interface:
@@ -17,6 +17,7 @@ Metadata:
           default: General Properties
         Parameters:
           - pSRASolutionName
+          - pSRASolutionVersion
           - pSRAStagingS3BucketNamePrefix
           - pCreateSRAStagingS3BucketInMemberAccounts
           - pCreateSSMParametersInMemberAccounts
@@ -82,6 +83,8 @@ Metadata:
         default: Root Organizational Unit ID
       pSRASolutionName:
         default: SRA Solution Name
+      pSRASolutionVersion:
+        default: SRA Solution Version
       pSRAStagingS3BucketNamePrefix:
         default: SRA Staging S3 Bucket Name Prefix
 
@@ -134,7 +137,10 @@ Parameters:
     ConstraintDescription:
       Must be alphanumeric or special characters [., _, -]. In addition, the slash character ( / ) used to delineate hierarchies in parameter names.
     Default: /sra/regions/enabled-regions
-    Description: SSM Parameter for Enabled regions
+    Description:
+      SSM Parameter for Enabled regions. Regions that are enabled within all accounts in the AWS Organization. This list should include all enabled
+      regions and not just the Control Tower governed regions. For example, it is recommended to enable some services like GuardDuty in all active
+      regions, which might include regions not governed by Control Tower.
     Type: AWS::SSM::Parameter::Value<List<String>>
   pEnabledRegionsWithoutHomeRegion:
     AllowedPattern: '^([\w.-]{1,900})$|^(\/[\w.-]{1,900})*[\w.-]{1,900}$'
@@ -153,6 +159,7 @@ Parameters:
   pLambdaLogGroupKmsKey:
     AllowedPattern: '^$|^arn:(aws[a-zA-Z-]*){1}:kms:[a-z0-9-]+:\d{12}:key\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$'
     ConstraintDescription: 'Key ARN example:  arn:aws:kms:us-east-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab'
+    Default: ''
     Description:
       (Optional) KMS Key ARN to use for encrypting the Lambda logs data. If empty, encryption is enabled with CloudWatch Logs managing the server-side
       encryption keys.
@@ -193,6 +200,11 @@ Parameters:
     Default: sra-common-prerequisites
     Description: The SRA solution name. The Description value is the folder name of the solution
     Type: String
+  pSRASolutionVersion:
+    AllowedValues: [v1.3]
+    Default: v1.3
+    Description: The SRA solution version. Used to trigger updates on the nested StackSets.
+    Type: String
   pSRAStagingS3BucketNamePrefix:
     AllowedValues: [sra-staging]
     Default: sra-staging
@@ -204,10 +216,15 @@ Parameters:
 Conditions:
   cCreateSRAStagingS3BucketInMemberAccounts: !Equals [!Ref pCreateSRAStagingS3BucketInMemberAccounts, 'true']
   cCreateSSMParametersInMemberAccounts: !Equals [!Ref pCreateSSMParametersInMemberAccounts, 'true']
+  cCreateAWSControlTowerExecutionRole: !Equals [!Ref pCreateAWSControlTowerExecutionRole, 'true']
+  cMoreThanOneControlTowerGovernedRegion: !Not [!Equals [!Join [',', !Ref pCustomerControlTowerRegionsWithoutHomeRegion], 'NONE']]
 
 Resources:
   rControlTowerExecutionRoleStack:
     Type: AWS::CloudFormation::Stack
+    Condition: cCreateAWSControlTowerExecutionRole
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
     Properties:
       TemplateURL: !Sub
         - https://${SRAStagingS3BucketName}.s3.${AWS::Region}.${AWS::URLSuffix}/${pSRASolutionName}/templates/sra-common-prerequisites-control-tower-execution-role.yaml
@@ -215,12 +232,9 @@ Resources:
       Tags:
         - Key: sra-solution
           Value: !Ref pSRASolutionName
-      Parameters:
-        pCreateAWSControlTowerExecutionRole: !Ref pCreateAWSControlTowerExecutionRole
 
   rSSMParametersMemberAccountsStackSet:
     Condition: cCreateSSMParametersInMemberAccounts
-    DependsOn: rControlTowerExecutionRoleStack
     Type: AWS::CloudFormation::StackSet
     Properties:
       StackSetName: sra-member-account-parameters
@@ -228,9 +242,18 @@ Resources:
         Enabled: true
         RetainStacksOnAccountRemoval: false
       CallAs: SELF
-      Description: Deploys SSM Parameters
+      # Using the Description with !GetAtt referencing the rControlTowerExecutionRoleStack to force the dependency, if cCreateAWSControlTowerExecutionRole is true.
+      Description: !If
+        - cCreateAWSControlTowerExecutionRole
+        - !Sub [
+            '${pSRASolutionVersion} - Deploys SSM Parameters via ${SolutionName}',
+            SolutionName: !GetAtt rControlTowerExecutionRoleStack.Outputs.oSRASolutionName,
+          ]
+        - !Sub ${pSRASolutionVersion} - Deploys SSM Parameters via ${pSRASolutionName}
+      ManagedExecution:
+        Active: true
       OperationPreferences:
-        FailureTolerancePercentage: 0
+        FailureTolerancePercentage: 100
         MaxConcurrentPercentage: 100
         RegionConcurrencyType: PARALLEL
       PermissionModel: SERVICE_MANAGED
@@ -268,7 +291,7 @@ Resources:
           ParameterValue: !Ref pRootOrganizationalUnitId
 
   rStagingS3BucketManagementAccountStackSet:
-    DependsOn: rControlTowerExecutionRoleStack
+    Condition: cMoreThanOneControlTowerGovernedRegion
     Type: AWS::CloudFormation::StackSet
     Properties:
       StackSetName: sra-staging-s3-bucket-management-account-regions
@@ -276,8 +299,17 @@ Resources:
       CallAs: SELF
       Capabilities:
         - CAPABILITY_NAMED_IAM
-      Description: Deploys an SRA Staging S3 Bucket
+      # Using the Description with !GetAtt referencing the rControlTowerExecutionRoleStack to force the dependency, if cCreateAWSControlTowerExecutionRole is true.
+      Description: !If
+        - cCreateAWSControlTowerExecutionRole
+        - !Sub [
+            '${pSRASolutionVersion} - Deploys an SRA Staging S3 Bucket via ${SolutionName}',
+            SolutionName: !GetAtt rControlTowerExecutionRoleStack.Outputs.oSRASolutionName,
+          ]
+        - !Sub ${pSRASolutionVersion} - Deploys an SRA Staging S3 Bucket via ${pSRASolutionName}
       ExecutionRoleName: AWSControlTowerExecution
+      ManagedExecution:
+        Active: true
       OperationPreferences:
         FailureTolerancePercentage: 0
         MaxConcurrentPercentage: 100
@@ -304,10 +336,12 @@ Resources:
           ParameterValue: !Ref pOrganizationId
         - ParameterKey: pSRASolutionName
           ParameterValue: !Ref pSRASolutionName
+      Tags:
+        - Key: sra-solution
+          Value: !Ref pSRASolutionName
 
   rStagingS3BucketMemberAccountsStackSet:
     Condition: cCreateSRAStagingS3BucketInMemberAccounts
-    DependsOn: rControlTowerExecutionRoleStack
     Type: AWS::CloudFormation::StackSet
     Properties:
       StackSetName: sra-staging-s3-bucket-member-accounts
@@ -317,9 +351,18 @@ Resources:
       CallAs: SELF
       Capabilities:
         - CAPABILITY_NAMED_IAM
-      Description: Deploys an SRA Staging S3 Bucket
+      # Using the Description with !GetAtt referencing the rControlTowerExecutionRoleStack to force the dependency, if cCreateAWSControlTowerExecutionRole is true.
+      Description: !If
+        - cCreateAWSControlTowerExecutionRole
+        - !Sub [
+            '${pSRASolutionVersion} - Deploys an SRA Staging S3 Bucket via ${SolutionName}',
+            SolutionName: !GetAtt rControlTowerExecutionRoleStack.Outputs.oSRASolutionName,
+          ]
+        - !Sub ${pSRASolutionVersion} - Deploys an SRA Staging S3 Bucket via ${pSRASolutionName}
+      ManagedExecution:
+        Active: true
       OperationPreferences:
-        FailureTolerancePercentage: 0
+        FailureTolerancePercentage: 100
         MaxConcurrentPercentage: 100
         RegionConcurrencyType: PARALLEL
       PermissionModel: SERVICE_MANAGED
@@ -344,3 +387,48 @@ Resources:
           ParameterValue: !Ref pOrganizationId
         - ParameterKey: pSRASolutionName
           ParameterValue: !Ref pSRASolutionName
+      Tags:
+        - Key: sra-solution
+          Value: !Ref pSRASolutionName
+
+  rSecretsKMSKeyStackSet:
+    Type: AWS::CloudFormation::StackSet
+    Properties:
+      StackSetName: sra-common-prerequisites-secrets-kms
+      AdministrationRoleARN: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/service-role/AWSControlTowerStackSetRole
+      CallAs: SELF
+      # Using the Description with !GetAtt referencing the rControlTowerExecutionRoleStack to force the dependency, if cCreateAWSControlTowerExecutionRole is true.
+      Description: !If
+        - cCreateAWSControlTowerExecutionRole
+        - !Sub [
+            '${pSRASolutionVersion} - Creates a KMS key within the Audit account for encrypting SRA secrets shared to the Management account via
+            ${SolutionName}',
+            SolutionName: !GetAtt rControlTowerExecutionRoleStack.Outputs.oSRASolutionName,
+          ]
+        - !Sub ${pSRASolutionVersion} - Creates a KMS key within the Audit account for encrypting SRA secrets shared to the Management account via
+          ${pSRASolutionName}
+      ExecutionRoleName: AWSControlTowerExecution
+      ManagedExecution:
+        Active: true
+      OperationPreferences:
+        FailureTolerancePercentage: 0
+        MaxConcurrentPercentage: 100
+        RegionConcurrencyType: PARALLEL
+      PermissionModel: SELF_MANAGED
+      StackInstancesGroup:
+        - DeploymentTargets:
+            Accounts:
+              - !Ref pAuditAccountId
+          Regions:
+            - !Ref AWS::Region
+      TemplateURL: !Sub
+        - https://${SRAStagingS3BucketName}.s3.${AWS::Region}.${AWS::URLSuffix}/${pSRASolutionName}/templates/sra-common-prerequisites-secrets-kms.yaml
+        - SRAStagingS3BucketName: !Sub ${pSRAStagingS3BucketNamePrefix}-${AWS::AccountId}-${AWS::Region}
+      Parameters:
+        - ParameterKey: pManagementAccountId
+          ParameterValue: !Ref AWS::AccountId
+        - ParameterKey: pOrganizationId
+          ParameterValue: !Ref pOrganizationId
+      Tags:
+        - Key: sra-solution
+          Value: !Ref pSRASolutionName

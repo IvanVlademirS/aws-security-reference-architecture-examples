@@ -5,7 +5,7 @@
 AWSTemplateFormatVersion: 2010-09-09
 Description:
   This template creates AWS Control Tower Account SSM Parameters. - 'common_prerequisites' solution in the repo,
-  https://github.com/aws-samples/aws-security-reference-architecture-examples
+  https://github.com/aws-samples/aws-security-reference-architecture-examples (sra-1ssgnse2h)
 Metadata:
   SRA:
     Version: 1.0
@@ -61,6 +61,7 @@ Parameters:
   pLambdaLogGroupKmsKey:
     AllowedPattern: '^$|^arn:(aws[a-zA-Z-]*){1}:kms:[a-z0-9-]+:\d{12}:key\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$'
     ConstraintDescription: 'Key ARN example:  arn:aws:kms:us-east-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab'
+    Default: ''
     Description:
       (Optional) KMS Key ARN to use for encrypting the Lambda logs data. If empty, encryption is enabled with CloudWatch Logs managing the server-side
       encryption keys.
@@ -101,6 +102,7 @@ Parameters:
     AllowedPattern: '^$|^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$'
     ConstraintDescription:
       S3 bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).
+    Default: ''
     Description:
       (Optional) SRA Staging S3 bucket name for the artifacts relevant to solution. (e.g., lambda zips, CloudFormation templates). If empty, the SRA
       Staging S3 bucket name will be resolved from the SSM Parameter '/sra/staging-s3-bucket-name'.
@@ -110,6 +112,17 @@ Conditions:
   cCreateLambdaLogGroup: !Equals [!Ref pCreateLambdaLogGroup, 'true']
   cUseKmsKey: !Not [!Equals [!Ref pLambdaLogGroupKmsKey, '']]
   cUseSRAStagingS3BucketNameSSMParameter: !Equals [!Ref pSRAStagingS3BucketName, '']
+  cUseGraviton: !Or
+    - !Equals [!Ref 'AWS::Region', ap-northeast-1]
+    - !Equals [!Ref 'AWS::Region', ap-south-1]
+    - !Equals [!Ref 'AWS::Region', ap-southeast-1]
+    - !Equals [!Ref 'AWS::Region', ap-southeast-2]
+    - !Equals [!Ref 'AWS::Region', eu-central-1]
+    - !Equals [!Ref 'AWS::Region', eu-west-1]
+    - !Equals [!Ref 'AWS::Region', eu-west-2]
+    - !Equals [!Ref 'AWS::Region', us-east-1]
+    - !Equals [!Ref 'AWS::Region', us-east-2]
+    - !Equals [!Ref 'AWS::Region', us-west-2]
 
 Resources:
   rManagementAccountParametersLambdaCustomResource:
@@ -131,13 +144,23 @@ Resources:
           - id: W92
             reason: Lambda does not need reserved concurrent executions.
       checkov:
-        - checkov:skip=CKV_AWS_116:DLQ not needed, as Lambda function only triggered by CloudFormation events.
-        - checkov:skip=CKV_AWS_173:Environment variables are not sensitive
+        skip:
+          - id: CKV_AWS_115
+            comment: Lambda does not need reserved concurrent executions.
+          - id: CKV_AWS_116
+            comment: DLQ not needed, as Lambda function only triggered by CloudFormation events.
+          - id: CKV_AWS_117
+            comment: Lambda does not need to communicate with VPC resources.
+          - id: CKV_AWS_173
+            comment: Environment variables are not sensitive
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Ref pManagementAccountParametersLambdaFunctionName
       Description: Creates Control Tower account SSM Parameters in the Management Account
-      Architectures: [arm64]
+      Architectures: !If
+        - cUseGraviton
+        - [arm64]
+        - !Ref AWS::NoValue
       Handler: app.lambda_handler
       Role: !GetAtt rManagementAccountParametersLambdaRole.Arn
       Runtime: python3.9

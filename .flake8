@@ -1,6 +1,8 @@
 [flake8]
 max-line-length = 150
-max-parameters-amount = 7
+max-complexity = 15
+max-cognitive-complexity = 15
+max-parameters-amount = 8
 min_python_version = 3.9.0
 copyright-regexp = Copyright Amazon.com, Inc\..*
 exclude =
@@ -13,8 +15,11 @@ select = A,B,B9,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,W,X,Y,Z,0,1,2,3,4,5,6,7,
 
 # disable below checks:
 ignore =
-    FS003  # f-string missing prefix (false positives with raw strings)
-    T003:  # add link on issue into TODO
+    FS003,  # f-string missing prefix (false positives with raw strings)
+    T003,  # add link on issue into TODO
+    W503,  # Line break occurred before binary operator
+    E203,  # whitespace before ':'
+    TYP001  # guard import by `if False: # TYPE_CHECKING`
 
 # disable flake8 checks for Lambda function source code that will be used inline. (max 4096 characters)
 per-file-ignores =

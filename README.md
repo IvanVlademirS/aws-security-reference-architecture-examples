@@ -1,12 +1,17 @@
 # AWS Security Reference Architecture Examples<!-- omit in toc -->
 
+<!-- markdownlint-disable MD033 -->
+
 Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved. SPDX-License-Identifier: CC-BY-SA-4.0
 
 ## Table of Contents<!-- omit in toc -->
 
 - [Introduction](#introduction)
+- [Getting Started with the SRA Code Examples](#getting-started-with-the-sra-code-examples)
+- [Quick Setup](#quick-setup)
 - [Example Solutions](#example-solutions)
 - [Utils](#utils)
+- [Environment Setup](#environment-setup)
 - [Repository and Solution Naming Convention](#repository-and-solution-naming-convention)
 - [Frequently Asked Questions](#frequently-asked-questions)
 - [Contributors](#contributors)
@@ -14,47 +19,64 @@ Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved. SPDX-License-
 
 ## Introduction
 
-This repository contains AWS CloudFormation templates to help developers and engineers deploy AWS security-related services in a multi-account environment following patterns that align with the
+This repository contains code to help developers and engineers deploy AWS security-related services in an `AWS Control Tower` multi-account environment following patterns that align with the
 [AWS Security Reference Architecture](https://docs.aws.amazon.com/prescriptive-guidance/latest/security-reference-architecture/). The Amazon Web Services (AWS) Security Reference Architecture (AWS SRA) is a holistic set of guidelines for deploying
 the full complement of AWS security services in a multi-account environment.
 
-The AWS service configurations and resources (e.g. IAM roles and policies) deployed by these templates are deliberately very restrictive. They are intended to illustrate an implementation path rather than provide a complete solution. You will need to
-modify and tailor these templates to suit your individual environment and security needs.
+The AWS service configurations and resources (e.g. IAM roles and policies) deployed by these templates are deliberately very restrictive. They are intended to illustrate an implementation pattern rather than provide a complete solution. You may need
+to modify and tailor these solutions to suit your environment and security needs.
 
-The examples within this repository have been deployed and tested using the corresponding deployment platform (e.g. AWS Control Tower and AWS CloudFormation StackSets).
+The examples within this repository have been deployed and tested within an `AWS Control Tower` environment using `AWS CloudFormation` as well as the `Customizations for AWS Control Tower (CFCT)` solution.
+
+## Getting Started with the SRA Code Examples
+
+![How to get started process diagram](./aws_sra_examples/docs/artifacts/where-to-start-process.png)
+
+1. Setup the environment to configure [AWS Control Tower](https://docs.aws.amazon.com/controltower/latest/userguide/getting-started-with-control-tower.html) within a new or existing AWS account. Existing AWS Control Tower environments can also be used but may require existing service configurations to be removed.
+2. Deploy the [Common Prerequisites](aws_sra_examples/solutions/common/common_prerequisites) solution. **Note:** This only needs to be done once for all the solutions.
+3. Choose a deployment method:
+   - AWS CloudFormation StackSets/Stacks - [AWS Documentation](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/what-is-cfnstacksets.html)
+   - Customizations for AWS Control Tower (CFCT) - [Solution Documentation](https://aws.amazon.com/solutions/implementations/customizations-for-aws-control-tower/)
+4. (Optional) - Deploy the [Customizations for AWS Control Tower (CFCT) Setup](aws_sra_examples/solutions/common/common_cfct_setup) solution. **Note** Only implement if the CFCT deployment method was selected.
+5. Per your requirements select one or all of the below [Example Solutions](#example-solutions) to implement via the selected deployment method.
+
+## Quick Setup
+
+With the `Quick Setup` you can now deploy all the [Example Solutions](#example-solutions) listed in the below table via a single centralized CloudFormation template either directly within the CloudFormation console or via the Customizations for AWS Control Tower (CFCT) solution. Our testing within an environment that has the default AWS Control Tower setup (3 accounts and 1 region) resulted in deploying all the solutions within the `Quick Setup` in under 20 minutes.
+
+Follow the instructions within the [Quick Setup](aws_sra_examples/quick_setup) to deploy all or a subset of the solutions based on your environment requirements.
 
 ## Example Solutions
 
-- CloudTrail
-  - [Organization CloudTrail](aws_sra_examples/solutions/cloudtrail/cloudtrail_org)
-- Common
-  - [Common Prerequisites](aws_sra_examples/solutions/common/common_prerequisites)
-  - [Common Register Delegated Administrator](aws_sra_examples/solutions/common/common_register_delegated_administrator)
-- Config
-  - [Config Management Account](aws_sra_examples/solutions/config/config_management_account)
-  - [Organization Aggregator](aws_sra_examples/solutions/config/config_aggregator_org)
-  - [Organization Conformance Pack](aws_sra_examples/solutions/config/config_conformance_pack_org)
-- EC2
-  - [EC2 Default EBS Encryption](aws_sra_examples/solutions/ec2/ec2_default_ebs_encryption)
-- Firewall Manager
-  - [Organization Firewall Manager](aws_sra_examples/solutions/firewall_manager/firewall_manager_org)
-- GuardDuty
-  - [Organization GuardDuty](aws_sra_examples/solutions/guardduty/guardduty_org)
-- IAM
-  - [Access Analyzer](aws_sra_examples/solutions/iam/iam_access_analyzer)
-  - [Account Password Policy](aws_sra_examples/solutions/iam/iam_password_policy_acct)
-- Macie
-  - [Organization Macie](aws_sra_examples/solutions/macie/macie_org)
-- S3
-  - [S3 Block Account Public Access](aws_sra_examples/solutions/s3/s3_block_account_public_access)
-- SecurityHub
-  - [Account SecurityHub Enabler](aws_sra_examples/solutions/securityhub/securityhub_enabler_acct)
+- **Note:** All solutions below depend on the [Common Prerequisites](aws_sra_examples/solutions/common/common_prerequisites) solution in addition to the specified solutions within the `Depends On` column.
+- Navigate to corresponding example solution to review what is deployed and configured within the environment.
+
+| Example Solution                                                                                      | Solution Highlights                                                                                                                                                                         | What does Control Tower provide?                                                                             | Depends On                                                                                                                                                                                                                              |
+| :---------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | :----------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Account Alternate Contacts](aws_sra_examples/solutions/account/account_alternate_contacts)           | Sets the billing, operations, and security alternate contacts for all accounts within the organization.                                                                                     |                                                                                                              |
+| [CloudTrail](aws_sra_examples/solutions/cloudtrail/cloudtrail_org)                                    | Organization trail with defaults set to configure data events (e.g. S3 and Lambda) to avoid duplicating the Control Tower configured CloudTrail. Options for configuring management events. | CloudTrail enabled in each account with management events only.                                              |                                                                                                                                                                                                                                         |
+| [Config Management Account](aws_sra_examples/solutions/config/config_management_account)              | Enables AWS Config in the Management account to allow resource compliance monitoring.                                                                                                       | Configures AWS Config in all accounts except for the Management account in each governed region.             |                                                                                                                                                                                                                                         |
+| [Config Organization Conformance Pack](aws_sra_examples/solutions/config/config_conformance_pack_org) | Deploys a conformance pack to all accounts and provided regions within an organization.                                                                                                     |                                                                                                              | <ul><li>[Common Register Delegated Administrator](aws_sra_examples/solutions/common/common_register_delegated_administrator)</li><li>[Config Management Account](aws_sra_examples/solutions/config/config_management_account)</li></ul> |
+| [Config Organization Aggregator](aws_sra_examples/solutions/config/config_aggregator_org)             | **Not required for most Control Tower environments.** Deploy an Organization Config Aggregator to a delegated admin other than the Audit account.                                           | Organization Config Aggregator in the Management account and Account Config Aggregator in the Audit account. | <ul><li>[Common Register Delegated Administrator](aws_sra_examples/solutions/common/common_register_delegated_administrator)</li></ul>                                                                                                  |
+| [EC2 Default EBS Encryption](aws_sra_examples/solutions/ec2/ec2_default_ebs_encryption)               | Configures the EC2 default EBS encryption to use the default KMS key within all provided regions.                                                                                           |                                                                                                              |                                                                                                                                                                                                                                         |
+| [Firewall Manager](aws_sra_examples/solutions/firewall_manager/firewall_manager_org)                  | Demonstrates configuring a security group policy and WAF policies for all accounts within an organization.                                                                                  |                                                                                                              |                                                                                                                                                                                                                                         |
+| [GuardDuty](aws_sra_examples/solutions/guardduty/guardduty_org)                                       | Configures GuardDuty within a delegated admin account for all accounts within an organization.                                                                                              |                                                                                                              |                                                                                                                                                                                                                                         |
+| [IAM Access Analyzer](aws_sra_examples/solutions/iam/iam_access_analyzer)                             | Configures an organization analyzer within a delegated admin account and account level analyzer within each account.                                                                        |                                                                                                              | <ul><li>[Common Register Delegated Administrator](aws_sra_examples/solutions/common/common_register_delegated_administrator)</li></ul>                                                                                                  |
+| [IAM Account Password Policy](aws_sra_examples/solutions/iam/iam_password_policy)                     | Sets the account password policy for users to align with common compliance standards.                                                                                                       |                                                                                                              |                                                                                                                                                                                                                                         |
+| [Macie](aws_sra_examples/solutions/macie/macie_org)                                                   | Configures Macie within a delegated admin account for all accounts within the organization.                                                                                                 |                                                                                                              |                                                                                                                                                                                                                                         |
+| [S3 Block Account Public Access](aws_sra_examples/solutions/s3/s3_block_account_public_access)        | Configures the account-level S3 BPA settings for all accounts within the organization.                                                                                                      | Configures S3 BPA settings on buckets created by Control Tower only.                                         |                                                                                                                                                                                                                                         |
+| [Security Hub](aws_sra_examples/solutions/securityhub/securityhub_org)                                | Configures Security Hub within a delegated admin account for all accounts and governed regions within the organization.                                                                     |                                                                                                              | <ul><li>[Config Management Account](aws_sra_examples/solutions/config/config_management_account)</li></ul>                                                                                                                              |
 
 ## Utils
 
-- [Prerequisites for AWS Control Tower solutions](aws_sra_examples/utils/aws_control_tower/prerequisites)
-- packaging_scripts
-  - package-lambda.sh (Creates the Lambda zip file and uploads to an S3 bucket)
+- packaging_scripts/stage-solution.sh (Package and stage all the AWS SRA example solutions. For more information see [Staging script details](aws_sra_examples/docs/DOWNLOAD-AND-STAGE-SOLUTIONS.md#staging-script-details))
+
+## Environment Setup
+
+Based on the deployment method selected these solutions are required to implement SRA solutions.
+
+- [Common Prerequisites](aws_sra_examples/solutions/common/common_prerequisites)
+- [Common Customizations for AWS Control Tower (CFCT) Setup](aws_sra_examples/solutions/common/common_cfct_setup)
 
 ## Repository and Solution Naming Convention
 
@@ -78,21 +100,13 @@ The repository is organized by AWS service solutions, which include deployment p
 │   │       │       ├── app.py
 │   │       │       └── requirements.txt
 │   │       └── templates
-│   │           ├── guardduty-org-configuration-role.yaml
-│   │           ├── guardduty-org-configuration.yaml
-│   │           ├── guardduty-org-delete-detector-role.yaml
-│   │           ├── guardduty-org-delivery-kms-key.yaml
-│   │           └── guardduty-org-delivery-s3-bucket.yaml
+│   │           ├── sra-guardduty-org-configuration-role.yaml
+│   │           ├── sra-guardduty-org-configuration.yaml
+│   │           ├── sra-guardduty-org-delete-detector-role.yaml
+│   │           ├── sra-guardduty-org-delivery-kms-key.yaml
+│   │           └── sra-guardduty-org-delivery-s3-bucket.yaml
 │   ├── ...
 ```
-
-The example solutions within this repository can be managed/deployed to accounts using AWS Organizations or directly within individual accounts. The suffix on the solution name identifies how the solution is managed/deployed.
-
-| Solution Suffix | Description                                                         |
-| --------------- | ------------------------------------------------------------------- |
-| acct            | The solution is managed/deployed within each account                |
-| org             | The solution is managed/deployed to accounts via AWS Organizations  |
-| ou              | The solution is managed/deployed to accounts via Organization Units |
 
 ## Frequently Asked Questions
 

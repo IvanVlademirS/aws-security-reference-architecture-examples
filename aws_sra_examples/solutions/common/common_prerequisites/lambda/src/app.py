@@ -13,9 +13,10 @@ import logging
 import os
 import re
 from time import sleep
-from typing import TYPE_CHECKING, Literal, Sequence, Union
+from typing import TYPE_CHECKING, Literal, Optional, Sequence, Union
 
 import boto3
+from botocore.config import Config
 from botocore.exceptions import ClientError, EndpointConnectionError
 from crhelper import CfnResource
 
@@ -29,7 +30,7 @@ if TYPE_CHECKING:
 
 # Setup Default Logger
 LOGGER = logging.getLogger(__name__)
-log_level = os.environ.get("LOG_LEVEL", logging.ERROR)
+log_level: str = os.environ.get("LOG_LEVEL", "ERROR")
 LOGGER.setLevel(log_level)
 
 # Global Variables
@@ -50,16 +51,19 @@ SRA_SSM_PARAMETERS = [
     "/sra/regions/customer-control-tower-regions",
     "/sra/regions/customer-control-tower-regions-without-home-region",
 ]
+UNEXPECTED = "Unexpected!"
+EMPTY_VALUE = "NONE"
+BOTO3_CONFIG = Config(retries={"max_attempts": 10, "mode": "standard"})
 
 # Initialize the helper
 helper = CfnResource(json_logging=True, log_level=log_level, boto_level="CRITICAL", sleep_on_delete=120)
 
 try:
     MANAGEMENT_ACCOUNT_SESSION = boto3.Session()
-    ORG_CLIENT: OrganizationsClient = MANAGEMENT_ACCOUNT_SESSION.client("organizations")
-    CFN_CLIENT: CloudFormationClient = MANAGEMENT_ACCOUNT_SESSION.client("cloudformation")
-except Exception as error:
-    LOGGER.error({"Unexpected_Error": error})
+    ORG_CLIENT: OrganizationsClient = MANAGEMENT_ACCOUNT_SESSION.client("organizations", config=BOTO3_CONFIG)
+    CFN_CLIENT: CloudFormationClient = MANAGEMENT_ACCOUNT_SESSION.client("cloudformation", config=BOTO3_CONFIG)
+except Exception:
+    LOGGER.exception(UNEXPECTED)
     raise ValueError("Unexpected error executing Lambda function. Review CloudWatch logs for details.") from None
 
 
@@ -84,6 +88,8 @@ def create_ssm_parameter(ssm_client: SSMClient, name: str, value: str, parameter
         value: SSM parameter value
         parameter_type: SSM parameter type
     """
+    if not value:
+        value = EMPTY_VALUE
     response = ssm_client.put_parameter(Name=name, Value=value, Type=parameter_type, Overwrite=True)
     LOGGER.debug({"API_Call": "ssm:PutParameter", "API_Response": response})
 
@@ -163,7 +169,7 @@ def get_enabled_regions() -> list:  # noqa: CCR001
     region_session = boto3.Session()
     for region in default_available_regions:
         try:
-            sts_client = region_session.client("sts", endpoint_url=f"https://sts.{region}.amazonaws.com", region_name=region)
+            sts_client = region_session.client("sts", endpoint_url=f"https://sts.{region}.amazonaws.com", region_name=region, config=BOTO3_CONFIG)
             sts_client.get_caller_identity()
             enabled_regions.append(region)
         except EndpointConnectionError:
@@ -301,7 +307,7 @@ def create_ssm_parameters_in_regions(ssm_parameters: list, tags: Sequence[TagTyp
     """
     parameters_created = set()
     for region in regions:
-        region_ssm_client: SSMClient = MANAGEMENT_ACCOUNT_SESSION.client("ssm", region_name=region)
+        region_ssm_client: SSMClient = MANAGEMENT_ACCOUNT_SESSION.client("ssm", region_name=region, config=BOTO3_CONFIG)
         for parameter in ssm_parameters:
             create_ssm_parameter(region_ssm_client, name=parameter["name"], value=parameter["value"], parameter_type=parameter["parameter_type"])
             add_tags_to_ssm_parameter(region_ssm_client, resource_id=parameter["name"], tags=tags)
@@ -318,10 +324,10 @@ def delete_ssm_parameters_in_regions(regions: list) -> None:  # noqa: CCR001
         regions: Regions
     """
     for region in regions:
-        region_ssm_client: SSMClient = MANAGEMENT_ACCOUNT_SESSION.client("ssm", region_name=region)
+        region_ssm_client: SSMClient = MANAGEMENT_ACCOUNT_SESSION.client("ssm", region_name=region, config=BOTO3_CONFIG)
 
         parameters_to_delete = []
-        count = 0
+        count = 0  # noqa: SIM113
         for parameter in SRA_SSM_PARAMETERS:
             count += 1  # noqa: SIM113
             if count <= SSM_DELETE_PARAMETERS_MAX:
@@ -337,7 +343,7 @@ def delete_ssm_parameters_in_regions(regions: list) -> None:  # noqa: CCR001
     LOGGER.info({"Deleted Parameters": SRA_SSM_PARAMETERS})
 
 
-def parameter_pattern_validator(parameter_name: str, parameter_value: Union[str, None], pattern: str) -> None:
+def parameter_pattern_validator(parameter_name: str, parameter_value: Optional[str], pattern: str) -> None:
     """Validate CloudFormation Custom Resource Parameters.
 
     Args:
@@ -385,7 +391,6 @@ def create_update_event(event: CloudFormationCustomResourceEvent, context: Conte
     """
     event_info = {"Event": event}
     LOGGER.info(event_info)
-
     params = get_validated_parameters(event)
     tags: Sequence[TagTypeDef] = [{"Key": params["TAG_KEY"], "Value": params["TAG_VALUE"]}]
 
@@ -425,11 +430,8 @@ def lambda_handler(event: CloudFormationCustomResourceEvent, context: Context) -
     Raises:
         ValueError: Unexpected error executing Lambda function
     """
-    LOGGER.info("....Lambda Handler Started....")
     try:
-        event_info = {"Event": event}
-        LOGGER.info(event_info)
         helper(event, context)
-    except Exception as error:
-        LOGGER.error({"Unexpected Error": error})
+    except Exception:
+        LOGGER.exception(UNEXPECTED)
         raise ValueError(f"See the details in CloudWatch Log Stream: '{context.log_group_name}'") from None
